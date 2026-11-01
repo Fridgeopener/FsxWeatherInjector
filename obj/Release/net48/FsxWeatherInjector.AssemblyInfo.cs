@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("FsxWeatherInjector")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.5.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.5.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.5.0+3965eece23cc657ae5bd835d6f73fcb85179c134")]
 [assembly: System.Reflection.AssemblyProductAttribute("FsxWeatherInjector")]
 [assembly: System.Reflection.AssemblyTitleAttribute("FSX Live Weather Injector")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.5.0.0")]

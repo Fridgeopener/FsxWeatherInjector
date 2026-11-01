@@ -10,3 +10,4 @@ C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector
 C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeath.32E23417.Up2Date
 C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.exe
 C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.pdb
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.sourcelink.json
