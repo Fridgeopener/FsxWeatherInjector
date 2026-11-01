@@ -1,0 +1,12 @@
+C:\Users\Wayne\Documents\FsxWeatherInjector\bin\Release\net48\FsxWeatherInjector.exe.config
+C:\Users\Wayne\Documents\FsxWeatherInjector\bin\Release\net48\FsxWeatherInjector.exe
+C:\Users\Wayne\Documents\FsxWeatherInjector\bin\Release\net48\FsxWeatherInjector.pdb
+C:\Users\Wayne\Documents\FsxWeatherInjector\bin\Release\net48\Microsoft.FlightSimulator.SimConnect.dll
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.csproj.AssemblyReference.cache
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.AssemblyInfoInputs.cache
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.AssemblyInfo.cs
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.csproj.CoreCompileInputs.cache
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeath.32E23417.Up2Date
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.exe
+C:\Users\Wayne\Documents\FsxWeatherInjector\obj\Release\net48\FsxWeatherInjector.pdb
