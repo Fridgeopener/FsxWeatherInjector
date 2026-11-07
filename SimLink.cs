@@ -40,6 +40,7 @@ namespace FsxWeatherInjector
         readonly IntPtr hwnd;
         SimConnect sc;
         readonly HashSet<string> stations = new HashSet<string>();
+        readonly Dictionary<string, string> lastRaw = new Dictionary<string, string>();   // icao -> last report sent
         readonly Dictionary<uint, string> sent = new Dictionary<uint, string>(); // packet id -> description
         DateTime lastConnectFailLog = DateTime.MinValue;
         System.Windows.Forms.Timer readbackTimer;
@@ -256,14 +257,24 @@ namespace FsxWeatherInjector
             catch (COMException) { Disconnect(); }
         }
 
-        public void Inject(IEnumerable<Metar> metars)
+        /// <summary>
+        /// Sends observations to FSX. Unless <paramref name="force"/> is set, a station whose report has not
+        /// changed since the last send is skipped: METARs change about once an hour, and every observation
+        /// FSX receives can make it rebuild weather, so repeating identical ones only costs smoothness.
+        /// Returns how many observations were actually sent.
+        /// </summary>
+        public int Inject(IEnumerable<Metar> metars, bool force)
         {
-            if (sc == null) return;
+            if (sc == null) return 0;
+            int sentCount = 0, unchanged = 0;
             try
             {
                 foreach (var m in metars)
                 {
                     var mm = m;
+                    string previous;
+                    if (!force && lastRaw.TryGetValue(mm.Icao, out previous) && previous == mm.Raw) { unchanged++; continue; }
+
                     if (stations.Add(mm.Icao))
                     {
                         // Fails harmlessly (logged) if FSX already knows this station.
@@ -274,9 +285,14 @@ namespace FsxWeatherInjector
                     }
                     // 0 = apply immediately; raise this if you want slower transitions.
                     Call("WeatherSetObservation " + mm.Raw, () => sc.WeatherSetObservation(0, mm.Raw));
+                    lastRaw[mm.Icao] = mm.Raw;
+                    sentCount++;
                 }
             }
-            catch (COMException) { Disconnect(); }
+            catch (COMException) { Disconnect(); return sentCount; }
+
+            Logger.Info("Inject: " + sentCount + " observation(s) sent, " + unchanged + " unchanged and skipped" + (force ? " (forced)" : ""));
+            return sentCount;
         }
 
         /// <summary>Set the sim's Zulu clock to the current real-world UTC time.</summary>
@@ -346,6 +362,7 @@ namespace FsxWeatherInjector
             Logger.Info("Disconnecting from SimConnect");
             if (readbackTimer != null) readbackTimer.Stop();
             stations.Clear();
+            lastRaw.Clear();
             sent.Clear();
             seq = 0;
             idOffset = 0;

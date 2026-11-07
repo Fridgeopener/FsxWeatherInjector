@@ -11,7 +11,7 @@ namespace FsxWeatherInjector
     public class MainForm : Form
     {
         public const string AppName = "FSX Live Weather Injector";
-        public const string AppVersion = "0.5";
+        public const string AppVersion = "0.6";
 
         SimLink link;
         readonly Settings cfg = Settings.Load();
@@ -28,6 +28,8 @@ namespace FsxWeatherInjector
         readonly NumericUpDown numRadius = new NumericUpDown();
         readonly Button btnNow = new Button();
         readonly Button btnDonate = new Button();
+        readonly Button btnLookup = new Button();
+        readonly Button btnSettings = new Button();
         readonly ListView list = new ListView();
         readonly StatusStrip status = new StatusStrip();
         readonly ToolStripStatusLabel lblStatus = new ToolStripStatusLabel();
@@ -38,6 +40,9 @@ namespace FsxWeatherInjector
         bool busy;
         bool pendingFirst = true;
         bool fatalShown;
+        bool connState;
+        LookupDialog lookup;
+        DateTime lastFullInject = DateTime.MinValue;   // UTC; everything is re-sent at least once an hour
 
         public MainForm()
         {
@@ -47,10 +52,12 @@ namespace FsxWeatherInjector
             MinimumSize = new Size(640, 380);
             StartPosition = FormStartPosition.CenterScreen;
             Icon = LoadIcon(32);
+            Theme.SetMode(cfg.ThemeMode);
 
             BuildUi();
             BuildMenus();
             LoadSettingsIntoUi();
+            ApplyTheme();
 
             tray.Icon = LoadIcon(SystemInformation.SmallIconSize.Width);
             tray.Text = AppName;
@@ -59,7 +66,13 @@ namespace FsxWeatherInjector
             tray.DoubleClick += (s, e) => OpenWindow();
 
             Resize += (s, e) => { if (WindowState == FormWindowState.Minimized) Hide(); };
-            FormClosing += (s, e) => { SaveSettings(); tray.Visible = false; if (link != null) link.Dispose(); };
+            FormClosing += (s, e) =>
+            {
+                SaveSettings();
+                tray.Visible = false;
+                if (lookup != null && !lookup.IsDisposed) lookup.Close();
+                if (link != null) link.Dispose();
+            };
 
             tick.Tick += (s, e) => OnTick();
             refresh.Tick += (s, e) => RequestUpdate();
@@ -97,12 +110,18 @@ namespace FsxWeatherInjector
             chkSync.AutoSize = true; chkSync.Padding = new Padding(0, 3, 0, 0);
 
             SetupNum(numInterval, 1, 120);
-            SetupNum(numStations, 1, 12);
+            SetupNum(numStations, 1, Settings.MaxStations);
             SetupNum(numRadius, 25, 1000); numRadius.Increment = 25;
             numInterval.ValueChanged += (s, e) => { refresh.Interval = (int)numInterval.Value * 60000; };
 
             btnNow.Text = "Update now"; btnNow.AutoSize = true;
             btnNow.Click += (s, e) => UpdateWeatherNow();
+
+            btnLookup.Text = "Airport lookup…"; btnLookup.AutoSize = true;
+            btnLookup.Click += (s, e) => OpenLookup();
+
+            btnSettings.Text = "Settings…"; btnSettings.AutoSize = true;
+            btnSettings.Click += (s, e) => OpenSettings();
 
             btnDonate.Text = "♥ Donate"; btnDonate.AutoSize = true;
             btnDonate.Click += (s, e) => DonateDialog.ShowFor(this, Icon);
@@ -116,7 +135,7 @@ namespace FsxWeatherInjector
                 chkEnabled,
                 Lbl("Refresh every"), numInterval, Lbl("min   "),
                 Lbl("Stations"), numStations, Lbl("   Radius"), numRadius, Lbl("nm   "),
-                btnNow, btnDonate
+                btnNow, btnLookup, btnSettings, btnDonate
             });
 
             top.Controls.Add(row1);
@@ -129,8 +148,10 @@ namespace FsxWeatherInjector
             list.HideSelection = false;
             list.Columns.Add("ICAO", 60);
             list.Columns.Add("Distance", 70, HorizontalAlignment.Right);
-            list.Columns.Add("Station", 170);
-            list.Columns.Add("METAR", 440);
+            list.Columns.Add("Station", 150);
+            list.Columns.Add("Source", 90);
+            list.Columns.Add("METAR", 360);
+            list.Columns.Add("Also covers", 120);
 
             status.Items.Add(lblStatus);
             lblStatus.Text = "Waiting for FSX…";
@@ -161,7 +182,14 @@ namespace FsxWeatherInjector
             help.DropDownItems.Add(new ToolStripSeparator());
             help.DropDownItems.Add("&About", null, (s, e) => ShowAbout());
 
+            var tools = new ToolStripMenuItem("&Tools");
+            tools.DropDownItems.Add(new ToolStripMenuItem("Airport Weather &Lookup…", null, (s, e) => OpenLookup())
+                { ShortcutKeys = Keys.Control | Keys.L });
+            tools.DropDownItems.Add(new ToolStripMenuItem("&Settings…", null, (s, e) => OpenSettings())
+                { ShortcutKeys = Keys.Control | Keys.Oemcomma });
+
             menu.Items.Add(file);
+            menu.Items.Add(tools);
             menu.Items.Add(help);
 
             // Tray right-click menu
@@ -211,8 +239,9 @@ namespace FsxWeatherInjector
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            Logger.Info(string.Format("Settings: inject={0} syncTime={1} interval={2}min stations={3} radius={4}nm",
-                chkEnabled.Checked, chkSync.Checked, numInterval.Value, numStations.Value, numRadius.Value));
+            Logger.Info(string.Format("Settings: inject={0} syncTime={1} interval={2}min stations={3} radius={4}nm source={5} merge={6}@{7}nm theme={8}",
+                chkEnabled.Checked, chkSync.Checked, numInterval.Value, numStations.Value, numRadius.Value,
+                cfg.MetarSource, cfg.MergeStations, cfg.MergeNm, cfg.ThemeMode));
             link = new SimLink(Handle);
             link.ConnectionChanged += OnConnectionChanged;
             link.PositionReceived += OnPosition;
@@ -251,6 +280,54 @@ namespace FsxWeatherInjector
         void ExitApp()
         {
             Application.Exit();
+        }
+
+        // ---- settings, lookup and theme ----------------------------------------------
+
+        void ApplyTheme()
+        {
+            Theme.Apply(this);
+            Theme.ApplyStrip(trayMenu);
+            SetConn(connState);
+            Refresh();
+        }
+
+        void OpenSettings()
+        {
+            SaveSettings();   // keep the toolbar values the dialog does not touch
+            using (var dlg = new SettingsDialog(cfg, Icon))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            }
+
+            Theme.SetMode(cfg.ThemeMode);
+            ApplyTheme();
+            if (lookup != null && !lookup.IsDisposed) Theme.Apply(lookup);
+
+            // A different source or merge setting should show up straight away.
+            if (link != null && link.Connected && chkEnabled.Checked)
+            {
+                pendingFirst = true;
+                RequestUpdate();
+            }
+        }
+
+        void OpenLookup()
+        {
+            if (lookup == null || lookup.IsDisposed)
+            {
+                lookup = new LookupDialog(cfg,
+                    () => link != null && link.Connected,
+                    stations => link == null ? 0 : link.Inject(stations, true),
+                    Icon);
+                lookup.FormClosed += (s, e) => lookup = null;
+                lookup.Show(this);
+            }
+            else
+            {
+                if (lookup.WindowState == FormWindowState.Minimized) lookup.WindowState = FormWindowState.Normal;
+                lookup.Activate();
+            }
         }
 
         void UpdateWeatherNow()
@@ -307,8 +384,9 @@ namespace FsxWeatherInjector
         {
             MessageBox.Show(this,
                 AppName + "\nVersion " + AppVersion + "\n\n" +
-                "Injects real-world METARs into Microsoft Flight Simulator X through SimConnect, " +
-                "and can keep the sim clock on real UTC time so airport ATIS reports match the current weather.\n\n" +
+                "Injects real-world METARs (NOAA, VATSIM or a custom address) into Microsoft Flight Simulator X " +
+                "through SimConnect, and can keep the sim clock on real UTC time so airport ATIS reports match " +
+                "the current weather.\n\n" +
                 "Authors:\n" +
                 "   Claude (Anthropic)\n" +
                 "   FridgeOp\n\n" +
@@ -343,8 +421,9 @@ namespace FsxWeatherInjector
 
         void SetConn(bool on)
         {
+            connState = on;
             lblConn.Text = on ? "● FSX connected" : "● FSX not running";
-            lblConn.ForeColor = on ? Color.ForestGreen : Color.Firebrick;
+            lblConn.ForeColor = on ? Theme.Good : Theme.Bad;
         }
 
         void OnEnabledChanged()
@@ -375,18 +454,33 @@ namespace FsxWeatherInjector
             {
                 int n = (int)numStations.Value;
                 double r = (double)numRadius.Value;
+                var opt = FetchOptions.From(cfg);   // copy now; the fetch runs on another thread
                 SetStatus("Fetching METARs…");
-                var metars = await System.Threading.Tasks.Task.Run(() => MetarService.Fetch(lat, lon, r, n));
+                var res = await System.Threading.Tasks.Task.Run(() => MetarService.Fetch(lat, lon, r, n, opt));
+                var metars = res.Stations;
 
                 if (metars.Count == 0) { SetStatus("No METARs found within radius – try increasing it"); return; }
 
                 // Set the sim clock first so the injected observations line up with sim time (and ATIS).
                 if (chkSync.Checked) link.SyncTimeToUtc();
-                link.Inject(metars);
+
+                // Re-send everything on the first update, after "Update now", and at least hourly;
+                // otherwise only reports that changed since the last send.
+                bool force = pendingFirst || (DateTime.UtcNow - lastFullInject).TotalMinutes >= 60;
+                int sent = link.Inject(metars, force);
+                if (force) lastFullInject = DateTime.UtcNow;
+
                 pendingFirst = false;
                 Fill(metars);
-                SetStatus(string.Format("Updated {0:HH:mm} – {1} station(s){2}", DateTime.Now, metars.Count,
-                    chkSync.Checked ? ", time synced to UTC" : ""));
+
+                var extra = new List<string>();
+                if (res.Merged > 0) extra.Add(res.Merged + " merged");
+                if (cfg.GetSourceKind() != SourceKind.Noaa)
+                    extra.Add(MetarSources.DisplayName(cfg.GetSourceKind()) + (res.Fallbacks > 0 ? ", " + res.Fallbacks + " from NOAA" : ""));
+                if (res.SourceError != null) extra.Add("source problem: " + res.SourceError);
+                if (chkSync.Checked) extra.Add("time synced to UTC");
+                SetStatus(string.Format("Updated {0:HH:mm} – {1} station(s), {2} sent{3}", DateTime.Now, metars.Count, sent,
+                    extra.Count > 0 ? " (" + string.Join("; ", extra.ToArray()) + ")" : ""));
             }
             catch (Exception ex)
             {
@@ -405,7 +499,9 @@ namespace FsxWeatherInjector
                 var it = new ListViewItem(m.Icao);
                 it.SubItems.Add(m.DistanceNm.ToString("F0") + " nm");
                 it.SubItems.Add(m.Name);
+                it.SubItems.Add(m.Source);
                 it.SubItems.Add(m.Raw);
+                it.SubItems.Add(string.Join(", ", m.Covers.ToArray()));
                 list.Items.Add(it);
             }
             list.EndUpdate();

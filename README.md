@@ -1,17 +1,48 @@
-# FSX Live Weather Injector  (v0.5)
+# FSX Live Weather Injector  (v0.6)
 
 Authors: Claude (Anthropic) and FridgeOp
 
-What's new in 0.5: real-time UTC clock sync, new icon, tray right-click menu
-(Update Weather now / Sync Time / Open / Exit), top menu bar and About box.
+What's new in 0.6: choice of METAR source (NOAA, VATSIM or a custom address), Settings dialog with a dark
+theme, Airport Weather Lookup (any airport, with VATSIM online ATIS), up to 30 stations, and merging of
+neighbouring stations that report the same weather.
+(0.5: real-time UTC clock sync, new icon, tray menu, menu bar and About box.)
 
 Small tray-friendly app that feeds real-world METARs into Microsoft Flight Simulator X through SimConnect.
 
 ## How it works
 - Connects to FSX via SimConnect (auto-retries every 5 s until FSX is running).
-- Reads your aircraft position **once per refresh** (default 10 min), downloads the nearest METARs
-  from NOAA's Aviation Weather Center, creates the stations in FSX and injects the observations.
+- Reads your aircraft position **once per refresh** (default 10 min), finds the nearest stations through
+  NOAA's Aviation Weather Center, takes their reports from the source you chose, creates the stations in FSX
+  and injects the observations. After the first update only reports that **changed** are re-sent
+  (everything is re-sent at least once an hour, and on "Update now").
 - Between refreshes it does nothing: no polling thread, no per-frame requests, ~no CPU.
+
+## Settings (Tools > Settings, Ctrl+,)
+1. **METAR source**
+   - *NOAA Aviation Weather Center* (default).
+   - *VATSIM METAR* (`metar.vatsim.net`): use it to match the weather other VATSIM pilots and controllers see.
+   - *Custom address*: paste the METAR address of another network (for example IVAO) with `{icaos}` (comma-separated
+     list, one request) or `{icao}` (one request per airport) where the airport code goes. Use **Test source**
+     to check it. No IVAO address is built in because I could not verify an official public one.
+   - Airport positions always come from NOAA. If the chosen source has no report for an airport (or only one
+     older than 3 hours when NOAA has a clearly newer one) NOAA's report is used and the list shows
+     "NOAA (fallback)". Untick the option to leave such airports out instead.
+2. **Appearance**: Light, Dark or Follow Windows. Windows message boxes always stay light.
+3. **Station selection**: merge neighbouring stations that report the same weather (see below).
+
+## Airport Weather Lookup (Tools > Airport Weather Lookup, Ctrl+L)
+Type any ICAO codes (destination, alternates), press Fetch. You get the latest METAR with its age, a plain-language
+decode, and, when a VATSIM controller is online there, the **VATSIM online ATIS text**. Copy the text, or send a station
+to FSX with **Inject into FSX** so FSX uses it as you approach. The window stays open while you fly.
+There is no free public source for real-world ATIS text, so ATIS only appears where a VATSIM controller is online;
+the METAR shown is what an ATIS reads from.
+
+## More stations, and merging neighbours
+- The station limit now goes up to 30 (default 12). The app's own cost per station is negligible; the effect on FSX
+  could not be measured while developing, so raise it in steps (12, 20, 30) and watch your frame rate.
+- With merging on, stations are taken nearest first. A station within the merge distance (default 40 nm) of one
+  already chosen, with practically the same wind, visibility, ceiling, cloud amount, temperature, pressure and
+  weather, is left out (the list shows it under "Also covers") and the next station further away is used instead.
 
 ## Requirements
 Tested so far only on FSX Steam Edition (SimConnect 10.0.62615.0). Other setups should work but are not confirmed.
@@ -27,7 +58,8 @@ Tested so far only on FSX Steam Edition (SimConnect 10.0.62615.0). Other setups 
   `SDK\Core Utilities Kit\SimConnect SDK\lib\managed`. If it is missing or the wrong version, the startup
   check shows a message explaining the fix.
 - **An internet connection** that can reach `aviationweather.gov` over HTTPS. Weather is downloaded from
-  there and nothing else is needed. Strict firewalls or proxies could block it.
+  there. Only if you choose them: `metar.vatsim.net` (VATSIM METARs), `data.vatsim.net` (online ATIS in the
+  lookup window) or your custom address. Strict firewalls or proxies could block these.
 
 **Not needed**
 - No installer, administrator rights, or separate runtime beyond the above.

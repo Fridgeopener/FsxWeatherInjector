@@ -59,6 +59,7 @@ namespace FsxWeatherInjector
             Controls.Add(layout);
 
             AcceptButton = button;
+            Theme.Apply(this);
         }
 
         void OpenLink()
